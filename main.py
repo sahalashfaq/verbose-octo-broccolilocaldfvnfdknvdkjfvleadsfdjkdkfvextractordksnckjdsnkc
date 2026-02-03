@@ -113,7 +113,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
 
                 results.append({
                     "Business Name": name,
-                    "Place URL": link,
+                    # "Place URL": link,
                     "Detailed Address": "N/A",
                     "Detailed Phone": "N/A",
                     "Detailed Website": "N/A",
@@ -241,4 +241,5 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
+
 

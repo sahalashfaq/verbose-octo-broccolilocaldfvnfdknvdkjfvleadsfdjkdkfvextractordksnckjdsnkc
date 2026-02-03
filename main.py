@@ -1,3 +1,4 @@
+# Google Maps Lead Scraper – ENHANCED VERSION (Phase separation + Rating + Map URL + Fixed Booking)
 import streamlit as st
 import pandas as pd
 import time, random, io, re, unicodedata
@@ -16,16 +17,13 @@ def clean_text(text: str) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFKD", text)
-    # Remove Google Maps private-use icons
     text = re.sub(r"[\uE000-\uF8FF]", "", text)
-    # Remove emojis / symbols
     text = re.sub(r"[\U00010000-\U0010FFFF]", "", text)
-    # Keep readable characters only
     text = re.sub(r"[^\w\s\.,:+\-()/]", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# ───────────────────────── CSS ─────────────────────────
+# ───────────────────────── CSS (unchanged) ─────────────────────────
 def local_css(file_name):
     try:
         with open(file_name) as f:
@@ -40,7 +38,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ───────────────────────── DRIVER ─────────────────────────
+# ───────────────────────── DRIVER (unchanged) ─────────────────────────
 def create_driver(headless=True):
     opts = Options()
     if headless:
@@ -56,7 +54,7 @@ def create_driver(headless=True):
     )
     return webdriver.Chrome(options=opts)
 
-# ───────────────────────── TIME FORMAT ─────────────────────────
+# ───────────────────────── TIME FORMAT (unchanged) ─────────────────────────
 def seconds_to_human(sec):
     if sec < 0:
         return "calculating..."
@@ -70,8 +68,8 @@ def seconds_to_human(sec):
 def scrape_google_maps(keyword, location, max_results, max_details, headless):
     start_time = time.time()
     results = []
-    search_url = f"https://www.google.com/maps/search/{keyword}+{location}".replace(" ", "+")
-    yield {"status": "info", "message": "Scanning Google Maps and stabilizing results feed…"}
+    search_url = f"https://www.google.com/maps/search/{urllib.parse.quote(keyword + ' ' + location)}"
+    yield {"status": "info", "message": "Scanning Google Maps and stabilizing results feed… (Phase 1)"}
     driver = create_driver(headless)
     driver.get(search_url)
     WebDriverWait(driver, 40).until(
@@ -80,6 +78,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
     st.markdown("It will take 10-30s between each Batch!")
     feed = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
     seen_links = set()
+    last_count = 0
     while len(results) < max_results:
         cards = feed.find_elements(By.CSS_SELECTOR, 'div.Nv2PK')
         added = 0
@@ -89,7 +88,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
             try:
                 link = card.find_element(By.TAG_NAME, "a").get_attribute("href")
                 name = clean_text(card.find_element(By.CSS_SELECTOR, '.qBF1Pd').text)
-                if link in seen_links:
+                if link in seen_links or not link:
                     continue
                 seen_links.add(link)
                 results.append({
@@ -100,17 +99,27 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                 yield {"status": "live_result", "data": results.copy()}
             except:
                 continue
-        if added == 0:
-            break
+        if added == 0 and len(results) == last_count:
+            break  # No more new results — Google limit reached
+        last_count = len(results)
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", feed)
-        time.sleep(1.5 + random.uniform(0.3, 1.0))
+        time.sleep(2 + random.uniform(0.5, 1.5))
     driver.quit()
-    if len(results) < max_results:
-        yield {"status": "info", "message": f"Only {len(results)} results found (Google limit). Proceeding to details..."}
-    else:
-        yield {"status": "info", "message": "Place URLs collected. Extracting details…"}
+
+    found_msg = f"Only {len(results)} results found (Google's per-search limit ≈120). " if len(results) < max_results else ""
+    yield {"status": "info", "message": f"{found_msg}Place URLs collected. Extracting details… (Phase 2)"}
+
     total = min(max_details, len(results))
     processed = 0
+    detail_columns = [
+        "Detailed Address", "Detailed Phone", "Detailed Website",
+        "Booking Link", "Plus Code", "Rating", "Map URL"
+    ]
+    # Initialize detail fields only when phase 2 starts
+    for res in results:
+        for col in detail_columns:
+            res[col] = "N/A"
+
     while processed < total:
         driver = create_driver(headless)
         batch = results[processed: processed + BATCH_SIZE]
@@ -122,81 +131,95 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                         (By.CSS_SELECTOR, '[data-item-id*="address"], [data-item-id*="phone"]')
                     )
                 )
-                time.sleep(1 + random.uniform(0.3, 1.0))
-                # Parse lat/long from Place URL
-                lat = "N/A"
-                long = "N/A"
+                time.sleep(1.2 + random.uniform(0.4, 1.2))
+
+                # Parse lat/long from Place URL for Map URL
                 try:
-                    parsed_url = urllib.parse.urlparse(business["Place URL"])
-                    path_parts = parsed_url.path.split('/')
-                    for i, part in enumerate(path_parts):
+                    parsed = urllib.parse.urlparse(business["Place URL"])
+                    for part in parsed.path.split('/'):
                         if part.startswith('@'):
                             coords = part[1:].split(',')
                             if len(coords) >= 2:
-                                lat = coords[0]
-                                long = coords[1]
+                                lat, lng = coords[0], coords[1]
+                                business["Map URL"] = f"https://www.google.com/maps/@{lat},{lng},17z"
                                 break
                 except:
-                    pass
-                # business["Map URL"] = f"https://www.google.com/maps/@{lat},{long},17z" if lat != "N/A" and long != "N/A" else "N/A"
+                    business["Map URL"] = "N/A"
+
                 try:
                     business["Detailed Address"] = clean_text(
                         driver.find_element(By.CSS_SELECTOR, '[data-item-id*="address"]').text
                     )
-                except: 
-                    business["Detailed Address"] = "N/A"
+                except:
+                    pass
                 try:
                     business["Detailed Phone"] = clean_text(
                         driver.find_element(By.CSS_SELECTOR, '[data-item-id*="phone"]').text
                     )
-                except: 
-                    business["Detailed Phone"] = "N/A"
+                except:
+                    pass
                 try:
-                    business["Detailed Website"] = clean_text(
-                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="authority"]').get_attribute("href")
-                    )
-                except: 
-                    business["Detailed Website"] = "N/A"
+                    business["Detailed Website"] = driver.find_element(
+                        By.CSS_SELECTOR, '[data-item-id*="authority"]'
+                    ).get_attribute("href")
+                except:
+                    pass
                 try:
                     business["Plus Code"] = clean_text(
                         driver.find_element(By.CSS_SELECTOR, '[data-item-id*="oloc"]').text
                     )
-                except: 
-                    business["Plus Code"] = "N/A"
+                except:
+                    pass
+
+                # Improved Booking Link detection
                 business["Booking Link"] = "N/A"
                 try:
-                    booking_elem = driver.find_element(By.CSS_SELECTOR, '[data-item-id^="action:book"]')
-                    business["Booking Link"] = booking_elem.get_attribute("href")
+                    booking_el = driver.find_element(By.CSS_SELECTOR, '[data-item-id^="action:book"], [aria-label*="Book"], [aria-label*="Reserve"], [data-item-id*="reservation"]')
+                    href = booking_el.get_attribute("href") or booking_el.get_attribute("data-url")
+                    if href and "book" in href.lower() or "reserve" in href.lower():
+                        business["Booking Link"] = href
                 except:
                     pass
-                business["Rating"] = "N/A"
+
+                # Rating using your provided XPath
                 try:
-                    rating_elem = driver.find_element(By.XPATH, '/html/body/div[1]/div[2]/div[9]/div[8]/div/div/div[1]/div[2]/div/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div[1]/div[2]/span[1]/span[1]')
-                    business["Rating"] = clean_text(rating_elem.text)
+                    rating_el = driver.find_element(By.XPATH, '/html/body/div[1]/div[2]/div[9]/div[8]/div/div/div[1]/div[2]/div/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div[1]/div[2]/span[1]/span[1]')
+                    business["Rating"] = clean_text(rating_el.text)
                 except:
-                    pass
+                    try:
+                        # Fallback common class (more stable)
+                        business["Rating"] = clean_text(
+                            driver.find_element(By.CSS_SELECTOR, '.F7nice span[aria-hidden="true"]').text
+                        )
+                    except:
+                        pass
+
                 processed += 1
                 yield {"status": "live_result", "data": results.copy()}
             except TimeoutException:
                 processed += 1
+            except Exception:
+                processed += 1
         driver.quit()
         time.sleep(3 + random.uniform(1, 3))
-    # Remove duplicates based on Place URL
-    seen_urls = set()
+
+    # Final deduplication (just in case)
+    seen = set()
     unique_results = []
-    for res in results:
-        url = res.get("Place URL")
-        if url not in seen_urls:
-            seen_urls.add(url)
-            unique_results.append(res)
+    for r in results:
+        url = r.get("Place URL")
+        if url and url not in seen:
+            seen.add(url)
+            unique_results.append(r)
     results = unique_results
+
     yield {
         "status": "done",
         "data": results,
         "total_time": time.time() - start_time
     }
 
-# ───────────────────────── UI ─────────────────────────
+# ───────────────────────── UI (unchanged layout) ─────────────────────────
 col1, col2 = st.columns(2)
 with col1:
     keyword = st.text_input("Keyword", "dentist")
@@ -207,10 +230,12 @@ with col1:
 with col2:
     max_details = st.number_input("Max Leads to Extract Details", 1, 20000, 300, 50)
 headless = st.checkbox("Headless mode", value=True)
+
 if st.button("Start Scraping", type="primary"):
     status = st.empty()
     progress = st.progress(0)
     table = st.empty()
+
     for update in scrape_google_maps(
         keyword.strip(),
         location.strip(),
@@ -222,11 +247,11 @@ if st.button("Start Scraping", type="primary"):
             status.info(update["message"])
         elif update["status"] == "live_result":
             df = pd.DataFrame(update["data"])
-            progress.progress(min(len(df) / max_details, 1.0))
+            progress.progress(min(len(df) / max_details, 1.0) if max_details > 0 else 0)
             table.dataframe(df, use_container_width=True)
         elif update["status"] == "done":
             df = pd.DataFrame(update["data"])
-            status.success(f"Completed in {update['total_time']:.1f} seconds")
+            status.success(f"Completed in {seconds_to_human(update['total_time'])}")
             csv = io.StringIO()
             df.to_csv(csv, index=False)
             st.download_button(
@@ -235,4 +260,3 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
-

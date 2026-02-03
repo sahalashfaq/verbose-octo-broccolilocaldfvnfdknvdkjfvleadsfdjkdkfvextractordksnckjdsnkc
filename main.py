@@ -122,7 +122,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
 
     detail_columns = [
         "Detailed Address", "Detailed Phone", "Detailed Website",
-        "Booking Link", "Plus Code", "Rating", "Map URL"
+        "Booking Link", "Plus Code", "Rating"
     ]
     for res in results:
         for col in detail_columns:
@@ -297,5 +297,6 @@ if st.button("Start Scraping", type="primary"):
 
         elif update.get("status") == "error":
             status.error(update["message"])
+
 
 

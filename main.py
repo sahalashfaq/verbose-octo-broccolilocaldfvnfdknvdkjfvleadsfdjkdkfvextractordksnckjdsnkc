@@ -1,8 +1,8 @@
-# Google Maps Lead Scraper – TRUE BATCH ISOLATION + ETA (Streamlit Cloud SAFE)
+# Google Maps Lead Scraper – TRUE BATCH ISOLATION + ETA (CLEAN TEXT VERSION)
 
 import streamlit as st
 import pandas as pd
-import time, random, io
+import time, random, io, re, unicodedata
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -11,6 +11,25 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
 BATCH_SIZE = 5
+
+# ───────────────────────── TEXT CLEANER ─────────────────────────
+def clean_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = unicodedata.normalize("NFKD", text)
+
+    # Remove Google Maps private-use icons
+    text = re.sub(r"[\uE000-\uF8FF]", "", text)
+
+    # Remove emojis / symbols
+    text = re.sub(r"[\U00010000-\U0010FFFF]", "", text)
+
+    # Keep readable characters only
+    text = re.sub(r"[^\w\s\.,:+\-()/]", "", text)
+
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 # ───────────────────────── CSS ─────────────────────────
 def local_css(file_name):
@@ -27,7 +46,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ───────────────────────── DRIVER (FIXED) ─────────────────────────
+# ───────────────────────── DRIVER ─────────────────────────
 def create_driver(headless=True):
     opts = Options()
 
@@ -40,17 +59,15 @@ def create_driver(headless=True):
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument("--disable-blink-features=AutomationControlled")
 
-    # IMPORTANT: Streamlit Cloud Chromium
     opts.binary_location = "/usr/bin/chromium"
 
     opts.add_argument(
         "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/144 Safari/537.36"
     )
 
-    # Selenium Manager auto-handles driver
     return webdriver.Chrome(options=opts)
 
-# ───────────────────────── Time Helper ─────────────────────────
+# ───────────────────────── TIME FORMAT ─────────────────────────
 def seconds_to_human(sec):
     if sec < 0:
         return "calculating..."
@@ -67,9 +84,8 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
     results = []
 
     search_url = f"https://www.google.com/maps/search/{keyword}+{location}".replace(" ", "+")
-
     yield {"status": "info", "message": "Scanning Google Maps and stabilizing results feed…"}
-    st.markdown("It will take 10-30s between each Batch!")
+
     driver = create_driver(headless)
     driver.get(search_url)
 
@@ -80,9 +96,6 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
     feed = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
     seen_links = set()
 
-    last_count = 0
-    last_time = time.time()
-
     while len(results) < max_results:
         cards = feed.find_elements(By.CSS_SELECTOR, 'div.Nv2PK')
 
@@ -91,7 +104,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                 break
             try:
                 link = card.find_element(By.TAG_NAME, "a").get_attribute("href")
-                name = card.find_element(By.CSS_SELECTOR, '.qBF1Pd').text.strip()
+                name = clean_text(card.find_element(By.CSS_SELECTOR, '.qBF1Pd').text)
 
                 if link in seen_links:
                     continue
@@ -111,46 +124,17 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
             except:
                 continue
 
-        driver.execute_script(
-            "arguments[0].scrollTop = arguments[0].scrollHeight", feed
-        )
+        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", feed)
         time.sleep(1.5 + random.uniform(0.3, 1.0))
-
-        now = time.time()
-        processed = len(results) - last_count
-        elapsed = now - last_time
-
-        if processed > 0 and elapsed > 0.5:
-            speed = processed / elapsed
-            remaining = max_results - len(results)
-            eta = seconds_to_human(remaining / speed)
-            pct = int(len(results) / max_results * 100)
-
-            yield {
-                "status": "info",
-                "message": f"Collecting places: {len(results)}/{max_results} ({pct}%) • ETA: {eta}"
-            }
-
-            last_count = len(results)
-            last_time = now
 
     driver.quit()
 
-    yield {
-        "status": "info",
-        "message": f"Place URLs collected ({len(results)}). Now extracting details…"
-    }
+    yield {"status": "info", "message": "Place URLs collected. Extracting details…"}
 
-    # ───────────────────────── DETAIL PHASE ─────────────────────────
     total = min(max_details, len(results))
     processed = 0
 
     while processed < total:
-        yield {
-            "status": "info",
-            "message": f"Extracting details (batch {processed // BATCH_SIZE + 1})…"
-        }
-
         driver = create_driver(headless)
         batch = results[processed: processed + BATCH_SIZE]
 
@@ -167,27 +151,27 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                 time.sleep(1 + random.uniform(0.3, 1.0))
 
                 try:
-                    business["Detailed Address"] = driver.find_element(
-                        By.CSS_SELECTOR, '[data-item-id*="address"]'
-                    ).text.strip()
+                    business["Detailed Address"] = clean_text(
+                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="address"]').text
+                    )
                 except: pass
 
                 try:
-                    business["Detailed Phone"] = driver.find_element(
-                        By.CSS_SELECTOR, '[data-item-id*="phone"]'
-                    ).text.strip()
+                    business["Detailed Phone"] = clean_text(
+                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="phone"]').text
+                    )
                 except: pass
 
                 try:
-                    business["Detailed Website"] = driver.find_element(
-                        By.CSS_SELECTOR, '[data-item-id*="authority"]'
-                    ).get_attribute("href")
+                    business["Detailed Website"] = clean_text(
+                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="authority"]').get_attribute("href")
+                    )
                 except: pass
 
                 try:
-                    business["Plus Code"] = driver.find_element(
-                        By.CSS_SELECTOR, '[data-item-id*="oloc"]'
-                    ).text.strip()
+                    business["Plus Code"] = clean_text(
+                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="oloc"]').text
+                    )
                 except: pass
 
                 business["Booking Link"] = business["Detailed Website"]
@@ -217,22 +201,10 @@ with col2:
     location = st.text_input("Location", "Lahore")
 
 with col1:
-    max_results = st.number_input(
-        "Max Results",
-        min_value=10,
-        max_value=50000,
-        value=30,
-        step=10
-    )
+    max_results = st.number_input("Max Results", 10, 50000, 30, 10)
 
 with col2:
-    max_details = st.number_input(
-        "Max Leads to Extract Details",
-        min_value=1,
-        max_value=20000,
-        value=300,
-        step=50
-    )
+    max_details = st.number_input("Max Leads to Extract Details", 1, 20000, 300, 50)
 
 headless = st.checkbox("Headless mode", value=True)
 
@@ -241,25 +213,20 @@ if st.button("Start Scraping", type="primary"):
     progress = st.progress(0)
     table = st.empty()
 
-    gen = scrape_google_maps(
+    for update in scrape_google_maps(
         keyword.strip(),
         location.strip(),
         int(max_results),
         int(max_details),
         headless
-    )
-
-    for update in gen:
+    ):
         if update["status"] == "info":
-            status.markdown(
-                f"<div style='padding:10px;background:#1e293b;color:#e2e8f0;border-radius:6px;'>{update['message']}</div>",
-                unsafe_allow_html=True
-            )
+            status.info(update["message"])
 
         elif update["status"] == "live_result":
             df = pd.DataFrame(update["data"])
             progress.progress(min(len(df) / max_details, 1.0))
-            table.dataframe(df, use_container_width=True, hide_index=True)
+            table.dataframe(df, use_container_width=True)
 
         elif update["status"] == "done":
             df = pd.DataFrame(update["data"])
@@ -273,5 +240,3 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
-
-

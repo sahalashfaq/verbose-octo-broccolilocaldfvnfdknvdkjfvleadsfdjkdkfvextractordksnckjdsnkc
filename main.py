@@ -1,17 +1,23 @@
-# Google Maps Lead Scraper – IMPROVED PROGRESS + CLEAN UI
+# Google Maps Lead Scraper – FIXED TABLE UPDATE + CLEAN PHASES
 import streamlit as st
 import pandas as pd
-import time, random, io, re, unicodedata
+import time
+import random
+import io
+import re
+import unicodedata
+import urllib.parse
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-import urllib.parse
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 BATCH_SIZE = 5
 
+# ───────────────────────── TEXT CLEANER ─────────────────────────
 def clean_text(text: str) -> str:
     if not text:
         return ""
@@ -22,6 +28,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+# ───────────────────────── CSS (if you have style.css) ─────────────────────────
 def local_css(file_name):
     try:
         with open(file_name) as f:
@@ -31,8 +38,12 @@ def local_css(file_name):
 
 local_css("style.css")
 
-st.markdown("<p class='h1'>Local <span>Leads Extractor</span></p>", unsafe_allow_html=True)
+st.markdown(
+    "<p class='h1'>Local <span>Leads Extractor</span></p>",
+    unsafe_allow_html=True
+)
 
+# ───────────────────────── DRIVER ─────────────────────────
 def create_driver(headless=True):
     opts = Options()
     if headless:
@@ -43,24 +54,34 @@ def create_driver(headless=True):
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.binary_location = "/usr/bin/chromium"
-    opts.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/144 Safari/537.36")
+    opts.add_argument(
+        "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/144 Safari/537.36"
+    )
     return webdriver.Chrome(options=opts)
 
+# ───────────────────────── SCRAPER ─────────────────────────
 def scrape_google_maps(keyword, location, max_results, max_details, headless):
     start_time = time.time()
     results = []
     search_url = f"https://www.google.com/maps/search/{urllib.parse.quote(keyword + ' ' + location)}"
-    
+
     yield {"status": "phase1_start"}
-    
+
     driver = create_driver(headless)
     driver.get(search_url)
-    WebDriverWait(driver, 40).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]')))
-    
+    try:
+        WebDriverWait(driver, 40).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]'))
+        )
+    except TimeoutException:
+        yield {"status": "error", "message": "Could not load results feed. Try again or check connection."}
+        driver.quit()
+        return
+
     feed = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
     seen_links = set()
     last_count = 0
-    
+
     while len(results) < max_results:
         cards = feed.find_elements(By.CSS_SELECTOR, 'div.Nv2PK')
         added = 0
@@ -68,67 +89,162 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
             if len(results) >= max_results:
                 break
             try:
-                link = card.find_element(By.TAG_NAME, "a").get_attribute("href")
+                link_elem = card.find_element(By.TAG_NAME, "a")
+                link = link_elem.get_attribute("href")
                 name = clean_text(card.find_element(By.CSS_SELECTOR, '.qBF1Pd').text)
-                if link in seen_links or not link:
+                if not link or link in seen_links:
                     continue
                 seen_links.add(link)
-                results.append({"Business Name": name, "Place URL": link})
+                results.append({
+                    "Business Name": name,
+                    "Place URL": link,
+                })
                 added += 1
                 yield {
                     "status": "live_result",
                     "data": results.copy(),
                     "phase": 1,
-                    "progress": len(results) / max_results
+                    "progress": min(len(results) / max_results, 1.0)
                 }
             except:
                 continue
+
         if added == 0 and len(results) == last_count:
             break
         last_count = len(results)
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", feed)
-        time.sleep(2 + random.uniform(0.5, 1.5))
-    
+        time.sleep(2.0 + random.uniform(0.5, 1.5))
+
     driver.quit()
     yield {"status": "phase1_complete", "count": len(results)}
 
-    # Phase 2
+    # ─── Phase 2 ────────────────────────────────────────────────────────────────
     total = min(max_details, len(results))
-    processed = 0
-    detail_columns = ["Detailed Address", "Detailed Phone", "Detailed Website", "Booking Link", "Plus Code", "Rating", "Map URL"]
+    if total == 0:
+        yield {"status": "done", "data": results, "total_time": time.time() - start_time}
+        return
+
+    detail_columns = [
+        "Detailed Address", "Detailed Phone", "Detailed Website",
+        "Booking Link", "Plus Code", "Rating", "Map URL"
+    ]
     for res in results:
         for col in detail_columns:
             res[col] = "N/A"
 
+    processed = 0
     while processed < total:
         driver = create_driver(headless)
-        batch = results[processed: processed + BATCH_SIZE]
+        batch = results[processed : processed + BATCH_SIZE]
+
         for business in batch:
             try:
                 driver.get(business["Place URL"])
-                WebDriverWait(driver, 25).until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-item-id*="address"], [data-item-id*="phone"]')))
+                WebDriverWait(driver, 25).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, '[data-item-id*="address"], [data-item-id*="phone"]')
+                    )
+                )
                 time.sleep(1.2 + random.uniform(0.4, 1.2))
 
-                # ... (all your existing detail extraction code remains unchanged) ...
-                # (Rating, Map URL, Booking Link, etc. - copy from previous version)
+                # Map URL from coordinates in place URL
+                try:
+                    parsed = urllib.parse.urlparse(business["Place URL"])
+                    for part in parsed.path.split('/'):
+                        if part.startswith('@'):
+                            coords = part[1:].split(',')
+                            if len(coords) >= 2:
+                                lat, lng = coords[0], coords[1]
+                                business["Map URL"] = f"https://www.google.com/maps/@{lat},{lng},17z"
+                                break
+                except:
+                    pass
 
-                processed += 1
-                yield {
-                    "status": "live_result",
-                    "data": results.copy(),
-                    "phase": 2,
-                    "progress": processed / total
-                }
-            except:
-                processed += 1
+                # Address
+                try:
+                    business["Detailed Address"] = clean_text(
+                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="address"]').text
+                    )
+                except:
+                    pass
+
+                # Phone
+                try:
+                    business["Detailed Phone"] = clean_text(
+                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="phone"]').text
+                    )
+                except:
+                    pass
+
+                # Website
+                try:
+                    business["Detailed Website"] = driver.find_element(
+                        By.CSS_SELECTOR, '[data-item-id*="authority"]').get_attribute("href")
+                except:
+                    pass
+
+                # Plus Code
+                try:
+                    business["Plus Code"] = clean_text(
+                        driver.find_element(By.CSS_SELECTOR, '[data-item-id*="oloc"]').text
+                    )
+                except:
+                    pass
+
+                # Booking Link (improved detection)
+                business["Booking Link"] = "N/A"
+                try:
+                    booking = driver.find_element(
+                        By.CSS_SELECTOR,
+                        '[data-item-id^="action:book"], [aria-label*="Book"], [aria-label*="Reserve"], [data-item-id*="reservation"]'
+                    )
+                    href = booking.get_attribute("href") or ""
+                    if href and any(word in href.lower() for word in ["book", "reserve", "appointment"]):
+                        business["Booking Link"] = href
+                except:
+                    pass
+
+                # Rating (your XPath + fallback)
+                try:
+                    rating_el = driver.find_element(By.XPATH, '/html/body/div[1]/div[2]/div[9]/div[8]/div/div/div[1]/div[2]/div/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div[1]/div[2]/span[1]/span[1]')
+                    business["Rating"] = clean_text(rating_el.text)
+                except:
+                    try:
+                        business["Rating"] = clean_text(
+                            driver.find_element(By.CSS_SELECTOR, '.F7nice span[aria-hidden="true"]').text
+                        )
+                    except:
+                        pass
+
+            except Exception:
+                pass  # continue even if timeout or element missing
+
+            processed += 1
+            yield {
+                "status": "live_result",
+                "data": results.copy(),
+                "phase": 2,
+                "progress": min(processed / total, 1.0)
+            }
+
         driver.quit()
-        time.sleep(3 + random.uniform(1, 3))
+        time.sleep(3.5 + random.uniform(1.0, 2.5))  # anti-ban delay
 
-    # Deduplication (unchanged)
+    # Final deduplication by Place URL
     seen = set()
-    results = [r for r in results if r.get("Place URL") and (r["Place URL"] not in seen) and not seen.add(r["Place URL"])]
+    unique_results = []
+    for r in results:
+        url = r.get("Place URL")
+        if url and url not in seen:
+            seen.add(url)
+            unique_results.append(r)
+    results = unique_results
 
-    yield {"status": "done", "data": results, "total_time": time.time() - start_time}
+    yield {
+        "status": "done",
+        "data": results,
+        "total_time": time.time() - start_time
+    }
 
 # ───────────────────────── UI ─────────────────────────
 col1, col2 = st.columns(2)
@@ -136,47 +252,75 @@ with col1:
     keyword = st.text_input("Keyword", "dentist")
 with col2:
     location = st.text_input("Location", "Lahore")
+
+col1, col2 = st.columns(2)
 with col1:
-    max_results = st.number_input("Max Results", 10, 50000, 30, 10)
+    max_results = st.number_input("Max Results (Phase 1)", 10, 50000, 120, 10)
 with col2:
-    max_details = st.number_input("Max Leads to Extract Details", 1, 20000, 300, 50)
+    max_details = st.number_input("Max Details to Extract (Phase 2)", 1, 20000, 300, 50)
+
 headless = st.checkbox("Headless mode", value=True)
 
 if st.button("Start Scraping", type="primary"):
     status = st.empty()
     phase_indicator = st.empty()
-    progress = st.progress(0)
-    table = st.empty()
+    progress_bar = st.progress(0)
+    table_placeholder = st.empty()
 
-    for update in scrape_google_maps(keyword.strip(), location.strip(), int(max_results), int(max_details), headless):
+    for update in scrape_google_maps(
+        keyword.strip(),
+        location.strip(),
+        int(max_results),
+        int(max_details),
+        headless
+    ):
         if update["status"] == "phase1_start":
-            phase_indicator.markdown("**🔍 Phase 1: Collecting Place URLs**")
-            status.markdown("Scanning Google Maps...")
+            phase_indicator.markdown("**🔍 Phase 1 – Collecting business links**")
+            status.markdown("Scanning Google Maps feed...")
 
         elif update["status"] == "phase1_complete":
             count = update["count"]
-            status.markdown(f"**✅ Phase 1 Complete** — **{count} businesses found**")
-            progress.progress(1.0)
-            time.sleep(1.0)                     # ← Pause to show completion
-            progress.progress(0)                # ← Reset for Phase 2
-            phase_indicator.markdown("**📋 Phase 2: Extracting Details**")
+            status.markdown(f"**Phase 1 finished** — found **{count}** unique places")
+            progress_bar.progress(1.0)
+            time.sleep(0.8)
+            progress_bar.progress(0)
+            phase_indicator.markdown("**📋 Phase 2 – Extracting details**")
+            status.markdown("Now visiting each place page...")
 
         elif update["status"] == "live_result":
             df = pd.DataFrame(update["data"])
             phase = update.get("phase", 1)
             prog = update.get("progress", 0)
-            
+
+            progress_bar.progress(prog)
+
             if phase == 1:
-                phase_indicator.markdown("**🔍 Phase 1: Collecting Place URLs**")
+                # Clean phase 1 view
+                cols_to_show = ["Business Name", "Place URL"]
+                table_placeholder.dataframe(
+                    df[cols_to_show] if all(c in df.columns for c in cols_to_show) else df,
+                    use_container_width=True
+                )
             else:
-                phase_indicator.markdown("**📋 Phase 2: Extracting Details**")
-            
-            progress.progress(prog)
-            table.dataframe(df, use_container_width=True)
+                # Full view in phase 2
+                table_placeholder.dataframe(df, use_container_width=True)
 
         elif update["status"] == "done":
             df = pd.DataFrame(update["data"])
-            status.success(f"✅ **All Done!** Completed in {update['total_time']:.1f} seconds")
-            csv = io.StringIO()
-            df.to_csv(csv, index=False)
-            st.download_button("📥 Download CSV", csv.getvalue(), "google_maps_leads.csv", "text/csv")
+            phase_indicator.empty()
+            status.success(
+                f"**Completed successfully!**  \n"
+                f"Total time: {update['total_time']:.1f} seconds  \n"
+                f"Final records: {len(df)}"
+            )
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv_buffer.getvalue(),
+                file_name="google_maps_leads.csv",
+                mime="text/csv"
+            )
+
+        elif update.get("status") == "error":
+            status.error(update["message"])

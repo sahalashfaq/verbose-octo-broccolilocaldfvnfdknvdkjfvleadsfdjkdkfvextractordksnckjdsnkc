@@ -121,7 +121,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
         return
 
     detail_columns = [
-        "Address", "Phone", "Provided Website",
+        "Address", "Phone", "Provided Website link",
         "Provided Booking Link", "Plus Code", "Rating"
     ]
     for res in results:
@@ -145,7 +145,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
 
                 # Address
                 try:
-                    business["Detailed Address"] = clean_text(
+                    business["Address"] = clean_text(
                         driver.find_element(By.CSS_SELECTOR, '[data-item-id*="address"]').text
                     )
                 except:
@@ -153,7 +153,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
 
                 # Phone
                 try:
-                    business["Detailed Phone"] = clean_text(
+                    business["Phone"] = clean_text(
                         driver.find_element(By.CSS_SELECTOR, '[data-item-id*="phone"]').text
                     )
                 except:
@@ -161,7 +161,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
 
                 # Website
                 try:
-                    business["Detailed Website"] = driver.find_element(
+                    business["Provided Website link"] = driver.find_element(
                         By.CSS_SELECTOR, '[data-item-id*="authority"]').get_attribute("href")
                 except:
                     pass
@@ -175,7 +175,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                     pass
 
                 # Booking Link
-                business["Booking Link"] = "N/A"
+                business["Provided Booking Link"] = "N/A"
                 try:
                     booking = driver.find_element(
                         By.CSS_SELECTOR,
@@ -297,6 +297,7 @@ if st.button("Start Scraping", type="primary"):
 
         elif update.get("status") == "error":
             status.error(update["message"])
+
 
 
 

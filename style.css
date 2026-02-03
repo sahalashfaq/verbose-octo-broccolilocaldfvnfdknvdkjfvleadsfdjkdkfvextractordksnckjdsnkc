@@ -57,9 +57,14 @@ div[data-testid="stFileUploader"] * {
 div[data-testid="stFileUploader"] .st-emotion-cache-fis6aj{
     margin-top: 50px;
 }
-.stAppViewMain{
-    padding-bottom:50px !important;
-    background:red;
+.st-emotion-cache-bm2z3a {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: auto;
+    -webkit-box-align: center;
+    align-items: center;
+    padding-bottom: 100px;
 }
 section[data-testid="stFileUploaderDropzone"]:has(input[data-testid="stFileUploaderDropzoneInput"]) {
     background: var(--white) !important;
@@ -406,5 +411,6 @@ div[data-testid="stCheckbox"]{
     display: none;
 
 }
+
 
 

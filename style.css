@@ -38,6 +38,7 @@ div[data-test-connection-state="CONNECTED"] {
     background: var(--background);
     background-image: linear-gradient(90deg, #ff44000c 1px, transparent 1px), linear-gradient(180deg, #ff44000c 1px, transparent 1px);
     background-size: 30px 30px;
+    padding-bottom:50px;
 }
 
 header,
@@ -400,4 +401,5 @@ div[data-baseweb="notification"] {
 }
 div[data-testid="stCheckbox"]{
     display: none;
+
 }

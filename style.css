@@ -23,7 +23,7 @@
     overflow: auto;
     -webkit-box-align: center;
     align-items: center;
-    padding-bottom: 100px;
+    padding-bottom: 100px !important;
 }
 :root {
     --background: rgb(251, 251, 251);
@@ -419,6 +419,7 @@ div[data-testid="stCheckbox"]{
     display: none;
 
 }
+
 
 
 

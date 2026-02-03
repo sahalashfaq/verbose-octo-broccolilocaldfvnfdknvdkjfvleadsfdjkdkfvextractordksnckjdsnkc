@@ -58,7 +58,8 @@ div[data-testid="stFileUploader"] .st-emotion-cache-fis6aj{
     margin-top: 50px;
 }
 .stAppViewMain{
-    padding-bottom:50px;
+    padding-bottom:50px !important;
+    background:red;
 }
 section[data-testid="stFileUploaderDropzone"]:has(input[data-testid="stFileUploaderDropzoneInput"]) {
     background: var(--white) !important;
@@ -405,4 +406,5 @@ div[data-testid="stCheckbox"]{
     display: none;
 
 }
+
 

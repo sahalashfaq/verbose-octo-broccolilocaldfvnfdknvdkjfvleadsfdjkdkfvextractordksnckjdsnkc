@@ -143,9 +143,6 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                 )
                 time.sleep(1.2 + random.uniform(0.4, 1.2))
 
-                except:
-                    pass
-
                 # Address
                 try:
                     business["Detailed Address"] = clean_text(
@@ -300,4 +297,5 @@ if st.button("Start Scraping", type="primary"):
 
         elif update.get("status") == "error":
             status.error(update["message"])
+
 

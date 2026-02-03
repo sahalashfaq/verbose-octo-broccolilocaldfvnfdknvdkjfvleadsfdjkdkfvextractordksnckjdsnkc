@@ -1,0 +1,4 @@
+streamlit==1.38.0  # Or latest, but pin for stability
+pandas
+selenium
+webdriver-manager

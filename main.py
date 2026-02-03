@@ -226,9 +226,9 @@ with col1:
 with col2:
     location = st.text_input("Location", "Lahore")
 with col1:
-    max_results = st.number_input("Max Results", 10, 50000, 30, 10)
+    max_results = st.number_input("Max Results", 10, 50000, 120, 10)
 with col2:
-    max_details = st.number_input("Max Leads to Extract Details", 1, 20000, 300, 50)
+    max_details = st.number_input("Max Leads to Extract Details", 1, 20000, 120, 50)
 headless = st.checkbox("Headless mode", value=True)
 
 if st.button("Start Scraping", type="primary"):
@@ -260,3 +260,4 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
+

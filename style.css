@@ -16,7 +16,15 @@
     --font-display: var(--space-grotesk);
 }
 
-
+.st-emotion-cache-bm2z3a {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: auto;
+    -webkit-box-align: center;
+    align-items: center;
+    padding-bottom: 100px;
+}
 :root {
     --background: rgb(251, 251, 251);
     --Secondry: #09112c;
@@ -411,6 +419,7 @@ div[data-testid="stCheckbox"]{
     display: none;
 
 }
+
 
 
 

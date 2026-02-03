@@ -138,7 +138,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                                 break
                 except:
                     pass
-                business["Map URL"] = f"https://www.google.com/maps/@{lat},{long},17z" if lat != "N/A" and long != "N/A" else "N/A"
+                # business["Map URL"] = f"https://www.google.com/maps/@{lat},{long},17z" if lat != "N/A" and long != "N/A" else "N/A"
                 try:
                     business["Detailed Address"] = clean_text(
                         driver.find_element(By.CSS_SELECTOR, '[data-item-id*="address"]').text
@@ -235,3 +235,4 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
+

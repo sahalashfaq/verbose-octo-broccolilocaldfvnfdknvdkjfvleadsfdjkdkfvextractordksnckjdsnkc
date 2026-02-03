@@ -92,6 +92,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
     WebDriverWait(driver, 40).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]'))
     )
+    st.markdown("It will take 10-30s between each Batch!")
 
     feed = driver.find_element(By.CSS_SELECTOR, 'div[role="feed"]')
     seen_links = set()
@@ -240,3 +241,4 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
+

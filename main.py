@@ -69,7 +69,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
     search_url = f"https://www.google.com/maps/search/{keyword}+{location}".replace(" ", "+")
 
     yield {"status": "info", "message": "Scanning Google Maps and stabilizing results feed…"}
-
+    st.markdown("It will take 10-30s between each Batch!")
     driver = create_driver(headless)
     driver.get(search_url)
 
@@ -273,4 +273,5 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
+
 

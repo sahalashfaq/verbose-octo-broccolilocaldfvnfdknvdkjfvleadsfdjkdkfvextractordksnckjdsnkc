@@ -143,16 +143,6 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                 )
                 time.sleep(1.2 + random.uniform(0.4, 1.2))
 
-                # Map URL
-                try:
-                    parsed = urllib.parse.urlparse(business["Place URL"])
-                    for part in parsed.path.split('/'):
-                        if part.startswith('@'):
-                            coords = part[1:].split(',')
-                            if len(coords) >= 2:
-                                lat, lng = coords[0], coords[1]
-                                business["Map URL"] = f"https://www.google.com/maps/@{lat},{lng},17z"
-                                break
                 except:
                     pass
 
@@ -263,7 +253,7 @@ if st.button("Start Scraping", type="primary"):
 
     for update in scrape_google_maps(keyword.strip(), location.strip(), int(max_results), int(max_details), headless):
         if update["status"] == "phase1_start":
-            phase_indicator.markdown("**🔍 Phase 1 – Collecting business links**")
+            phase_indicator.markdown("**Phase 1 – Collecting business links**")
             status.markdown("Scanning Google Maps...")
 
         elif update["status"] == "phase1_complete":
@@ -272,7 +262,7 @@ if st.button("Start Scraping", type="primary"):
             progress_bar.progress(1.0)
             time.sleep(0.8)
             progress_bar.progress(0)
-            phase_indicator.markdown("**📋 Phase 2 – Extracting details**")
+            phase_indicator.markdown("**Phase 2 – Extracting details**")
             status.markdown("Visiting each place page to get phone, address, website...")
 
         elif update["status"] == "live_result":
@@ -296,13 +286,13 @@ if st.button("Start Scraping", type="primary"):
 
             phase_indicator.empty()
             status.success(
-                f"**All done!** 🎉\n"
+                f"**All done!** \n"
                 f"Extracted details for **{len(df)}** leads in {update['total_time']:.1f} seconds"
             )
             csv = io.StringIO()
             df.to_csv(csv, index=False)
             st.download_button(
-                label="📥 Download CSV",
+                label="Download CSV",
                 data=csv.getvalue(),
                 file_name="google_maps_leads.csv",
                 mime="text/csv"
@@ -310,3 +300,4 @@ if st.button("Start Scraping", type="primary"):
 
         elif update.get("status") == "error":
             status.error(update["message"])
+

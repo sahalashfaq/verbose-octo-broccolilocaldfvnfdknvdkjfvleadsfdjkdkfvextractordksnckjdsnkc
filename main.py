@@ -1,61 +1,66 @@
-# Google Maps Lead Scraper – TRUE BATCH ISOLATION + ETA (2026)
-# Shows real-time Estimated Time of Arrival (remaining time)
+# Google Maps Lead Scraper – TRUE BATCH ISOLATION + ETA (Streamlit Cloud SAFE)
 
 import streamlit as st
 import pandas as pd
 import time, random, io
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
 
 BATCH_SIZE = 5
 
+# ───────────────────────── CSS ─────────────────────────
 def local_css(file_name):
-    with open(file_name) as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    try:
+        with open(file_name) as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    except:
+        pass
 
 local_css("style.css")
 
-st.markdown("<p class='h1'>Local <span>Leads Extractor</span></p>", unsafe_allow_html=True)
+st.markdown(
+    "<p class='h1'>Local <span>Leads Extractor</span></p>",
+    unsafe_allow_html=True
+)
 
-# ───────────────────────── DRIVER ─────────────────────────
+# ───────────────────────── DRIVER (FIXED) ─────────────────────────
 def create_driver(headless=True):
     opts = Options()
+
     if headless:
         opts.add_argument("--headless=new")
+
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--window-size=1920,1080")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+
+    # IMPORTANT: Streamlit Cloud Chromium
+    opts.binary_location = "/usr/bin/chromium"
+
     opts.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128 Safari/537.36"
-    )
-    return webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=opts
+        "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/144 Safari/537.36"
     )
 
-# ───────────────────────── Human readable time ─────────────────────────
+    # Selenium Manager auto-handles driver
+    return webdriver.Chrome(options=opts)
+
+# ───────────────────────── Time Helper ─────────────────────────
 def seconds_to_human(sec):
     if sec < 0:
         return "calculating..."
     if sec < 60:
         return f"{int(sec)} sec"
     if sec < 3600:
-        m = int(sec // 60)
-        s = int(sec % 60)
-        return f"{m} min {s} sec"
-    h = int(sec // 3600)
-    m = int((sec % 3600) // 60)
-    return f"{h} h {m} min"
+        return f"{int(sec // 60)} min {int(sec % 60)} sec"
+    return f"{int(sec // 3600)} h {int((sec % 3600) // 60)} min"
 
-
-# ───────────────────────── SCRAPER with ETA ─────────────────────────
+# ───────────────────────── SCRAPER ─────────────────────────
 def scrape_google_maps(keyword, location, max_results, max_details, headless):
 
     start_time = time.time()
@@ -87,6 +92,7 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
             try:
                 link = card.find_element(By.TAG_NAME, "a").get_attribute("href")
                 name = card.find_element(By.CSS_SELECTOR, '.qBF1Pd').text.strip()
+
                 if link in seen_links:
                     continue
                 seen_links.add(link)
@@ -102,28 +108,27 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                 })
 
                 yield {"status": "live_result", "data": results.copy()}
-
             except:
                 continue
 
-        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", feed)
-        time.sleep(1.8 + random.uniform(0.3, 1.2))
+        driver.execute_script(
+            "arguments[0].scrollTop = arguments[0].scrollHeight", feed
+        )
+        time.sleep(1.5 + random.uniform(0.3, 1.0))
 
-        # ── ETA calculation (place collection phase) ──
         now = time.time()
         processed = len(results) - last_count
         elapsed = now - last_time
 
         if processed > 0 and elapsed > 0.5:
-            speed = processed / elapsed          # items per second
-            remaining_items = max_results - len(results)
-            eta_sec = remaining_items / speed
-            eta_str = seconds_to_human(eta_sec)
-            pct = min(100, int(len(results) / max_results * 100))
+            speed = processed / elapsed
+            remaining = max_results - len(results)
+            eta = seconds_to_human(remaining / speed)
+            pct = int(len(results) / max_results * 100)
 
             yield {
                 "status": "info",
-                "message": f"Collecting places: {len(results)} / {max_results} ({pct}%) • ETA: {eta_str}"
+                "message": f"Collecting places: {len(results)}/{max_results} ({pct}%) • ETA: {eta}"
             }
 
             last_count = len(results)
@@ -131,25 +136,22 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
 
     driver.quit()
 
-    yield {"status": "info", "message": f"Place URLs collected ({len(results)}). Now extracting details…" }
+    yield {
+        "status": "info",
+        "message": f"Place URLs collected ({len(results)}). Now extracting details…"
+    }
 
-    # ───────────────────────── DETAIL EXTRACTION PHASE ─────────────────────────
-    total_to_process = min(max_details, len(results))
+    # ───────────────────────── DETAIL PHASE ─────────────────────────
+    total = min(max_details, len(results))
     processed = 0
 
-    last_count_details = 0
-    last_time_details = time.time()
-
-    st.markdown("It will take 10-30s between each Batch!")
-    while processed < total_to_process:
-        batch_start_time = time.time()
-
+    while processed < total:
         yield {
             "status": "info",
             "message": f"Extracting details (batch {processed // BATCH_SIZE + 1})…"
         }
-        driver = create_driver(headless)
 
+        driver = create_driver(headless)
         batch = results[processed: processed + BATCH_SIZE]
 
         for business in batch:
@@ -162,67 +164,48 @@ def scrape_google_maps(keyword, location, max_results, max_details, headless):
                     )
                 )
 
-                time.sleep(1.0 + random.uniform(0.4, 1.1))
+                time.sleep(1 + random.uniform(0.3, 1.0))
 
                 try:
-                    business["Detailed Address"] = driver.find_element(By.CSS_SELECTOR,'[data-item-id*="address"]').text.strip()
+                    business["Detailed Address"] = driver.find_element(
+                        By.CSS_SELECTOR, '[data-item-id*="address"]'
+                    ).text.strip()
                 except: pass
 
                 try:
-                    business["Detailed Phone"] = driver.find_element(By.CSS_SELECTOR,'[data-item-id*="phone"]').text.strip()
+                    business["Detailed Phone"] = driver.find_element(
+                        By.CSS_SELECTOR, '[data-item-id*="phone"]'
+                    ).text.strip()
                 except: pass
 
                 try:
-                    business["Detailed Website"] = driver.find_element(By.CSS_SELECTOR,'[data-item-id*="authority"]').get_attribute("href")
+                    business["Detailed Website"] = driver.find_element(
+                        By.CSS_SELECTOR, '[data-item-id*="authority"]'
+                    ).get_attribute("href")
                 except: pass
 
                 try:
-                    business["Plus Code"] = driver.find_element(By.CSS_SELECTOR,'[data-item-id*="oloc"]').text.strip()
+                    business["Plus Code"] = driver.find_element(
+                        By.CSS_SELECTOR, '[data-item-id*="oloc"]'
+                    ).text.strip()
                 except: pass
 
                 business["Booking Link"] = business["Detailed Website"]
-
                 processed += 1
+
                 yield {"status": "live_result", "data": results.copy()}
 
             except TimeoutException:
                 processed += 1
-                continue
 
         driver.quit()
-
-        # ── ETA calculation (detail extraction phase) ──
-        batch_time = time.time() - batch_start_time
-        now = time.time()
-
-        processed_this_batch = min(BATCH_SIZE, total_to_process - (processed - len(batch)))
-        if processed_this_batch > 0:
-            speed = processed_this_batch / batch_time if batch_time > 0 else 0
-        else:
-            speed = 0
-
-        remaining_items = total_to_process - processed
-        eta_sec = remaining_items / speed if speed > 0 else -1
-
-        pct = min(100, int(processed / total_to_process * 100)) if total_to_process > 0 else 0
-
-        eta_str = seconds_to_human(eta_sec)
-
-        yield {
-            "status": "info",
-            "message": f"Detail extraction: {processed}/{total_to_process} ({pct}%) • ETA: {eta_str}"
-        }
-
-        time.sleep(3.5 + random.uniform(1, 3))   # anti-ban delay between batches
-
-    total_time = time.time() - start_time
+        time.sleep(3 + random.uniform(1, 3))
 
     yield {
         "status": "done",
         "data": results,
-        "total_time": total_time
+        "total_time": time.time() - start_time
     }
-
 
 # ───────────────────────── UI ─────────────────────────
 col1, col2 = st.columns(2)
@@ -235,7 +218,7 @@ with col2:
 
 with col1:
     max_results = st.number_input(
-        "Max Results (scroll limit)",
+        "Max Results",
         min_value=10,
         max_value=50000,
         value=80,
@@ -254,10 +237,9 @@ with col2:
 headless = st.checkbox("Headless mode", value=True)
 
 if st.button("Start Scraping", type="primary"):
-
     status = st.empty()
-    progress_bar = st.progress(0)
-    table_placeholder = st.empty()
+    progress = st.progress(0)
+    table = st.empty()
 
     gen = scrape_google_maps(
         keyword.strip(),
@@ -275,28 +257,19 @@ if st.button("Start Scraping", type="primary"):
             )
 
         elif update["status"] == "live_result":
-            df_live = pd.DataFrame(update["data"])
-            count = len(df_live)
-
-            # Progress: based on detail extraction phase (most important)
-            progress = min(count / max_details, 1.0) if max_details > 0 else 0
-            progress_bar.progress(progress)
-
-            table_placeholder.dataframe(
-                df_live,
-                use_container_width=True,
-                hide_index=True
-            )
+            df = pd.DataFrame(update["data"])
+            progress.progress(min(len(df) / max_details, 1.0))
+            table.dataframe(df, use_container_width=True, hide_index=True)
 
         elif update["status"] == "done":
             df = pd.DataFrame(update["data"])
-            status.success(f"Completed successfully in {update['total_time']:.1f} seconds total.")
+            status.success(f"Completed in {update['total_time']:.1f} seconds")
 
-            csv_buffer = io.StringIO()
-            df.to_csv(csv_buffer, index=False)
+            csv = io.StringIO()
+            df.to_csv(csv, index=False)
             st.download_button(
-                label="Download CSV",
-                data=csv_buffer.getvalue(),
-                file_name="google_maps_leads.csv",
-                mime="text/csv"
+                "Download CSV",
+                csv.getvalue(),
+                "google_maps_leads.csv",
+                "text/csv"
             )

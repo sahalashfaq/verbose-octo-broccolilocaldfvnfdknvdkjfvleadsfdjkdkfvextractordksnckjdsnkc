@@ -57,7 +57,7 @@ div[data-testid="stFileUploader"] * {
 div[data-testid="stFileUploader"] .st-emotion-cache-fis6aj{
     margin-top: 50px;
 }
-.st-emotion-cache-bm2z3a {
+/* .st-emotion-cache-bm2z3a {
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -65,7 +65,7 @@ div[data-testid="stFileUploader"] .st-emotion-cache-fis6aj{
     -webkit-box-align: center;
     align-items: center;
     padding-bottom: 100px;
-}
+} */
 section[data-testid="stFileUploaderDropzone"]:has(input[data-testid="stFileUploaderDropzoneInput"]) {
     background: var(--white) !important;
     box-shadow: var(--normal_shaodow);
@@ -411,6 +411,7 @@ div[data-testid="stCheckbox"]{
     display: none;
 
 }
+
 
 
 

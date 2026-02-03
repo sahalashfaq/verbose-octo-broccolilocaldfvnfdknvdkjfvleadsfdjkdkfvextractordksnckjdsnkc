@@ -221,7 +221,7 @@ with col1:
         "Max Results",
         min_value=10,
         max_value=50000,
-        value=80,
+        value=30,
         step=10
     )
 
@@ -273,3 +273,4 @@ if st.button("Start Scraping", type="primary"):
                 "google_maps_leads.csv",
                 "text/csv"
             )
+
